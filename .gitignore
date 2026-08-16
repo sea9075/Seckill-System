@@ -1,0 +1,23 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Node / React
+node_modules/
+dist/
+client/.env.local
+client/.env*.local
+
+# Docker
+.env
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# 其他
+AI/
+*.log

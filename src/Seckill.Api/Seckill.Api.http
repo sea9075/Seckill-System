@@ -1,0 +1,6 @@
+@Seckill.Api_HostAddress = http://localhost:5011
+
+GET {{Seckill.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

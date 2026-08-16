@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Seckill.Api/Seckill.Api.csproj" />
+    <Project Path="src/Seckill.Application/Seckill.Application.csproj" />
+    <Project Path="src/Seckill.Domain/Seckill.Domain.csproj" />
+    <Project Path="src/Seckill.Infrastructure/Seckill.Infrastructure.csproj" />
+    <Project Path="src/Seckill.Worker/Seckill.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Seckill.IntegrationTests/Seckill.IntegrationTests.csproj" />
+    <Project Path="tests/Seckill.UnitTests/Seckill.UnitTests.csproj" />
+  </Folder>
+</Solution>
