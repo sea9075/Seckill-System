@@ -10,7 +10,7 @@ services:
     volumes:
       - mssql-data:/var/opt/mssql
     healthcheck:
-      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' || exit 1"]
+      test: [ "CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -23,11 +23,11 @@ services:
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 10
-  
+
   api:
     build:
       context: .
@@ -35,8 +35,11 @@ services:
     container_name: seckill-api
     environment:
       ASPNETCORE_ENVIRONMENT: "${ASPNETCORE_ENVIRONMENT}"
-      ConnectionString__Default: "Server=mssql,1443;Database=SeckillSystemDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
-      Redis__ConnecttionString: "redis:6379"
+      ConnectionStrings__Default: "Server=mssql,1433;Database=SeckillDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True"
+      Redis__ConnectionString: "redis:6379"
+      Jwt__Key: ${JWT_KEY}
+      Jwt__Issuer: "SeckillApi"
+      Jwt__Audience: "SeckillClient"
     ports:
       - "${API_PORT}:8080"
     depends_on:
@@ -44,6 +47,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  k6:
+    image: grafana/k6:latest
+    container_name: seckill-k6
+    profiles: [ "loadtest" ]
+    volumes:
+      - ./loadtests/k6:/scripts
+    working_dir: /scripts
+    environment:
+      BASE_URL: "http://api:8080"
+      AVTIVITY_ID: "1"
+    depends_on:
+      api:
+        condition: service_started
 
 volumes:
   mssql-data:
