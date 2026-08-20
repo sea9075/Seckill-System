@@ -7,7 +7,9 @@ using Scalar.AspNetCore;
 using Seckill.Application.Interfaces;
 using Seckill.Application.Services;
 using Seckill.Infrastructure.Persistence;
+using Seckill.Infrastructure.Redis;
 using Seckill.Infrastructure.Repositories;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +40,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
 });
 
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect(builder.Configuration["Redis:ConnectionString"]!)
+);
+
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
@@ -46,8 +52,11 @@ builder.Services.AddOpenApi();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IProductService, ProductService>();
 builder.Services.AddScoped<IProductOrderService, ProductOrderService>();
+builder.Services.AddScoped<IRedisInventoryService, RedisInventoryService>();
 builder.Services.AddScoped<ISeckillOrderService, SeckillOrderService>();
 builder.Services.AddScoped<ISeckillActivityService, SeckillActivityService>();
+builder.Services.AddScoped<IDistributedLockService, RedisDistributedLockService>();
+builder.Services.AddScoped<ISeckillStockSyncService, SeckillStockSyncService>();
 
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
@@ -76,7 +85,7 @@ app.UseExceptionHandler(errorApp =>
         };
 
         context.Response.StatusCode = statusCode;
-        await context.Response.WriteAsJsonAsync(new {message});
+        await context.Response.WriteAsJsonAsync(new { message });
     });
 });
 
@@ -89,7 +98,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
     app.MapScalarApiReference(); // 互動式介面，路由在 /scalar
 }
-app.MapGet("/api/health", () => Results.Ok(new {status = "ok", timestamp = DateTime.UtcNow}));
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", timestamp = DateTime.UtcNow }));
 app.MapControllers();
 
 app.Run();

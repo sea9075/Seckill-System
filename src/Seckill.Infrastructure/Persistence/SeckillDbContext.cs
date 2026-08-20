@@ -28,7 +28,7 @@ public class SeckillDbContext : DbContext
             entity.Property(p => p.RowVersion)
                 .HasColumnType("rowversion")
                 .ValueGeneratedOnAddOrUpdate()
-                .IsRowVersion();
+                .IsRowVersion(); // 樂觀鎖
 
             // 差別在於：欄位型別還是 SQL Server 的 rowversion，資料庫每次 UPDATE 還是會自動更新這個值
             // 但 EF 產生的 UPDATE 語句不會把它加進 WHERE 條件，也就偵測不到併發衝突

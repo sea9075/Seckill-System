@@ -7,11 +7,17 @@ public class SeckillActivityService : ISeckillActivityService
 {
     private readonly ISeckillActivityRepository _activityRepository;
     private readonly IProductRepository _productRepository;
+    private readonly ISeckillStockSyncService _stockSyncService;
 
-    public SeckillActivityService(ISeckillActivityRepository activityRepository, IProductRepository productRepository)
+    public SeckillActivityService(
+        ISeckillActivityRepository activityRepository,
+        IProductRepository productRepository,
+        ISeckillStockSyncService stockSyncService
+        )
     {
         _activityRepository = activityRepository;
         _productRepository = productRepository;
+        _stockSyncService = stockSyncService;
     }
 
     public async Task<List<SeckillActivity>> GetAllAsync()
@@ -25,8 +31,13 @@ public class SeckillActivityService : ISeckillActivityService
             throw new InvalidOperationException("找不到對應的商品");
 
         var activity = SeckillActivity.Create(productId, start, end, stock, isHighTraffic);
-
         await _activityRepository.AddAsync(activity);
+
+        if (isHighTraffic)
+        {
+            await _stockSyncService.SyncStockToRedisAsync(activity.Id, stock);
+        }
+        
         return activity;
     }
 }

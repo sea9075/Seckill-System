@@ -29,4 +29,11 @@ public class OrderRepository : IOrderRepository
     {
         return await _dbContext.Orders.Where(o => o.UserId == userId).ToListAsync();
     }
+
+    public async Task<int> CountConfirmedByActivityIdAsync(int activityId)
+    {
+        return await _dbContext.Orders.CountAsync(
+            o => o.ActivityId == activityId && o.Status == OrderStatus.Confirmed
+        );
+    }
 }

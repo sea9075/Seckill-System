@@ -5,25 +5,48 @@ public class SeckillOrderService : ISeckillOrderService
 {
     private readonly ISeckillActivityRepository _activityRepository;
     private readonly IOrderRepository _orderRepository;
+    private readonly IRedisInventoryService _redisInventoryService;
+    private readonly ISeckillStockSyncService _stockSyncService;
 
-    public SeckillOrderService(ISeckillActivityRepository activityRepository, IOrderRepository orderRepository)
+    public SeckillOrderService(
+        ISeckillActivityRepository activityRepository,
+        IOrderRepository orderRepository,
+        IRedisInventoryService redisInventoryService,
+        ISeckillStockSyncService stockSyncService
+        )
     {
         _activityRepository = activityRepository;
         _orderRepository = orderRepository;
+        _redisInventoryService = redisInventoryService;
+        _stockSyncService = stockSyncService;
     }
 
     public async Task<Order> PlaceOrderAsync(Guid userId, int activityId)
     {
         var activity = await _activityRepository.GetByIdAsync(activityId) ??
             throw new InvalidOperationException("活動不存在");
-        
+
         if (!activity.IsOngoing(DateTime.UtcNow))
             throw new InvalidOperationException("活動未開始或已結束");
 
-        // 跟 ProductOrderService 一樣的競態條件，這裡更明顯，因為秒殺場景衝突機率高很多
-        activity.DecreaseStock(1);  // MVP 先假設秒殺一人限購 1 件，沒有這個假設的話兩個 Service 差異會更複雜
+        var (result, _) = await _redisInventoryService.TryDecrementStockAsync(activityId, 1);
 
-        // 注意：這裡沒有呼叫任何 Repository 方法去存 activity 的異動，靠的是 EF Core 的 change tracking
+        switch (result)
+        {
+            case StockDecrementtResult.NotFound:
+                // Redis 裡的庫存 key 不見了（例如 Redis 重啟遺失資料）
+                // 嘗試從 MSSQL 重建，讓使用者重新搶購一次，而不是直接判定這次搶購失敗
+                // 就算同一瞬間有上千個請求都走到這裡，SyncStockToRedisAsync 內部的分散式鎖
+                // 也只會讓其中一個實例真正執行重建，其他人會直接跳過
+                await _stockSyncService.SyncStockToRedisAsync(activityId, activity.SeckillStock);
+                throw new InvalidOperationException("系統剛完成庫存校正，請重新搶購一次");
+            case StockDecrementtResult.OutOfStock:
+                throw new InvalidOperationException("手慢了，庫存已被搶完");
+        }
+
+        // 注意：這篇（Step 3）先維持同步寫 DB，Order 建立完成才回應使用者
+        // Phase 4 Step 5 會把這裡改成推進 Redis Stream，交給獨立的 Worker 非同步寫入
+        // 屆時這支方法回應給前端的語意也會跟著改變
         var order = new Order
         {
             Id = Guid.NewGuid(),
@@ -36,7 +59,7 @@ public class SeckillOrderService : ISeckillOrderService
             CreatedAt = DateTime.UtcNow
         };
 
-        await _orderRepository.AddAsync(order); // 這裡的 SaveChangesAsync 會一起存到 activity 的異動
+        await _orderRepository.AddAsync(order);
         return order;
     }
 }

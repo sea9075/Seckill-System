@@ -36,4 +36,9 @@ public class ProductRepository : IProductRepository
         // 呼叫 SaveChangesAsync 就會自動把異動寫回去，不用再手動呼叫 _dbContext.Products.Update(product)
         await _dbContext.SaveChangesAsync();
     }
+
+    public async Task ReloadAsync(Product product)
+    {
+        await _dbContext.Entry(product).ReloadAsync();
+    }
 }
