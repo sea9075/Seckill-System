@@ -5,11 +5,18 @@ namespace Seckill.Infrastructure.Redis;
 
 public class RedisInventoryService : IRedisInventoryService
 {
-    private const string DecrementScript = @"
-        local stockKey = KEYS[1]
-        local quantity = tonumber(ARGV[1])
-        local currentStock = tonumber(redis.call('GET', stockKey))
+    public const string OrderStreamKey = "seckill:orders:stream";
 
+    private const string DecrementAndEnqueueScript = @"
+        local stockKey = KEYS[1]
+        local streamKey = KEYS[2]
+        local quantity = tonumber(ARGV[1])
+        local orderId = ARGV[2]
+        local userId = ARGV[3]
+        local productId = ARGV[4]
+        local activityId = ARGV[5]
+
+        local currentStock = tonumber(redis.call('GET', stockKey))
         if currentStock == nil then
             return -1
         end
@@ -18,24 +25,31 @@ public class RedisInventoryService : IRedisInventoryService
         end
 
         redis.call('DECRBY', stockKey, quantity)
+        redis.call('XADD', streamKey, '*',
+            'orderId', orderId, 'userId', userId, 'productId', productId,
+            'activityId', activityId, 'quantity', quantity)
+
         return currentStock - quantity
     ";
 
-    private static string StockKey(int activityId) => $"seckill:stock:{activityId}";
     private readonly IConnectionMultiplexer _redis;
+    private static string StockKey(int activityId) => $"seckill:stock:{activityId}";
 
     public RedisInventoryService(IConnectionMultiplexer redis)
     {
         _redis = redis;
     }
 
-    public async Task<(StockDecrementtResult, long)> TryDecrementStockAsync(int activityId, int quantity)
+    public async Task<(StockDecrementtResult, long)> TryDecrementAndEnqueueAsync(
+        int activityId, int quantity, Guid orderId, Guid userId, int productId
+    )
     {
         var db = _redis.GetDatabase();
+
         var raw = await db.ScriptEvaluateAsync(
-            DecrementScript,
-            new RedisKey[] { StockKey(activityId) },
-            new RedisValue[] { quantity }
+            DecrementAndEnqueueScript,
+            new RedisKey[] {StockKey(activityId), OrderStreamKey},
+            new RedisValue[] {quantity, orderId.ToString(), userId.ToString(), productId, activityId}
         );
 
         var result = (long)raw;

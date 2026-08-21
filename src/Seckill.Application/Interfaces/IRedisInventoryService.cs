@@ -9,6 +9,6 @@ public enum StockDecrementtResult
 
 public interface IRedisInventoryService
 {
-    Task<(StockDecrementtResult Result, long RemainingStock)> TryDecrementStockAsync(int activityId, int quantity);
+    Task<(StockDecrementtResult Result, long RemainingStock)> TryDecrementAndEnqueueAsync(int activityId, int quantity, Guid orderId, Guid userId, int productId);
     Task SetStockAsync(int activityId, int stock);
 }

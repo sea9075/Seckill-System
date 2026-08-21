@@ -23,43 +23,40 @@ public class SeckillOrderService : ISeckillOrderService
 
     public async Task<Order> PlaceOrderAsync(Guid userId, int activityId)
     {
-        var activity = await _activityRepository.GetByIdAsync(activityId) ??
-            throw new InvalidOperationException("活動不存在");
+        var activity = await _activityRepository.GetByIdAsync(activityId)
+            ?? throw new InvalidOperationException("活動不存在");
 
         if (!activity.IsOngoing(DateTime.UtcNow))
             throw new InvalidOperationException("活動未開始或已結束");
 
-        var (result, _) = await _redisInventoryService.TryDecrementStockAsync(activityId, 1);
+        var orderId = Guid.NewGuid(); // Id 現在由 Producer 先產生，一路帶到 Consumer
+        
+        var (result, _) = await _redisInventoryService.TryDecrementAndEnqueueAsync(
+            activityId, 1, orderId, userId, activity.ProductId
+        );
 
         switch (result)
         {
             case StockDecrementtResult.NotFound:
-                // Redis 裡的庫存 key 不見了（例如 Redis 重啟遺失資料）
-                // 嘗試從 MSSQL 重建，讓使用者重新搶購一次，而不是直接判定這次搶購失敗
-                // 就算同一瞬間有上千個請求都走到這裡，SyncStockToRedisAsync 內部的分散式鎖
-                // 也只會讓其中一個實例真正執行重建，其他人會直接跳過
                 await _stockSyncService.SyncStockToRedisAsync(activityId, activity.SeckillStock);
                 throw new InvalidOperationException("系統剛完成庫存校正，請重新搶購一次");
             case StockDecrementtResult.OutOfStock:
                 throw new InvalidOperationException("手慢了，庫存已被搶完");
         }
 
-        // 注意：這篇（Step 3）先維持同步寫 DB，Order 建立完成才回應使用者
-        // Phase 4 Step 5 會把這裡改成推進 Redis Stream，交給獨立的 Worker 非同步寫入
-        // 屆時這支方法回應給前端的語意也會跟著改變
-        var order = new Order
+        // 注意：這裡回傳的 Order 還沒真正寫進 MSSQL，Status 是 Pending
+        // 代表「搶購成功、名額已保留」，實際的訂單記錄由 Seckill.Worker 非同步建立
+        // 前端要改用 GET /api/orders/{id} 輪詢，直到 Status 變成 Confirmed 才算真正落地
+        return new Order
         {
-            Id = Guid.NewGuid(),
+            Id = orderId,
             UserId = userId,
             ProductId = activity.ProductId,
             ActivityId = activity.Id,
             Quantity = 1,
-            IdempotencyKey = Guid.NewGuid().ToString(),
-            Status = OrderStatus.Confirmed,
+            IdempotencyKey = string.Empty,
+            Status = OrderStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };
-
-        await _orderRepository.AddAsync(order);
-        return order;
     }
 }
