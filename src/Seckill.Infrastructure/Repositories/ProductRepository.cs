@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Seckill.Application.Interfaces;
 using Seckill.Domain.Entities;
 using Seckill.Infrastructure.Persistence;
@@ -8,10 +9,12 @@ namespace Seckill.Infrastructure.Repositories;
 public class ProductRepository : IProductRepository
 {
     private readonly SeckillDbContext _dbContext;
+    private readonly ILogger _logger;
 
-    public ProductRepository(SeckillDbContext dbContext)
+    public ProductRepository(SeckillDbContext dbContext, ILogger<ProductRepository> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task<List<Product>> GetAllAsync()
@@ -21,6 +24,7 @@ public class ProductRepository : IProductRepository
 
     public async Task<Product?> GetByIdAsync(int id)
     {
+        _logger.LogInformation("實際查詢 DB：ProductId={Id}", id);
         return await _dbContext.Products.FindAsync(id);
     }
 

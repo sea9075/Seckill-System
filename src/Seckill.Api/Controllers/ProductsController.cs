@@ -9,10 +9,12 @@ namespace Seckill.Api.Controllers;
 public class ProductsController : ControllerBase
 {
     private readonly IProductService _productService;
+    private readonly IProductCacheService _productionCacheService;
 
-    public ProductsController(IProductService productService)
+    public ProductsController(IProductService productService, IProductCacheService productCacheService)
     {
         _productService = productService;
+        _productionCacheService = productCacheService;
     }
 
     [HttpGet]
@@ -27,6 +29,13 @@ public class ProductsController : ControllerBase
         );
 
         return Ok(product);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var product = await _productionCacheService.GetByIdAsync(id);
+        return product is null ? NotFound() : Ok(product);
     }
 }
 

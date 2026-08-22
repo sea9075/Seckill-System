@@ -6,10 +6,13 @@ namespace Seckill.Application.Services;
 public class ProductService : IProductService
 {
     private readonly IProductRepository _productRepository;
+    private readonly IProductCacheService _productCacheService;
 
-    public ProductService(IProductRepository productRepository)
+    public ProductService(IProductRepository productRepository, IProductCacheService productCacheService)
     {
         _productRepository = productRepository;
+        _productCacheService = productCacheService;
+
     }
 
     public async Task<List<Product>> GetAllAsync()
@@ -33,5 +36,7 @@ public class ProductService : IProductService
         existing.Update(name, price, stock); // 驗證跟賦值都在 Product.Update() 裡完成
 
         await _productRepository.UpdateAsync(existing);
+        // 資料改了，舊快取要失效，不然使用者會看到舊資料
+        await _productCacheService.InvalidateAsync(id);
     }
 }

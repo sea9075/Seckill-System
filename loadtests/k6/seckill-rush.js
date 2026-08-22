@@ -39,7 +39,8 @@ export default function () {
 
   check(res, {
     '搶購成功 (200)': (r) => r.status === 200,
-    '搶購失敗但錯誤碼正確 (400/409)': (r) => r.status === 400 || r.status === 409,
+    '庫存判斷正常拒絕 (400/409)': (r) => r.status === 400 || r.status === 409,
+    '被限流擋下 (429)': (r) => r.status === 429,
     '非預期錯誤 (5xx)': (r) => r.status >= 500,
   });
 }

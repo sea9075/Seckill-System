@@ -16,6 +16,8 @@
 | Step 2（樂觀鎖） | MSSQL RowVersion + `DbUpdateConcurrencyException` 重試 | 一般商品（`ProductOrderService`） | 50 | 10 | 10 | 40 | 0 | 否 | 庫存剩 0，剛好 10 筆 `Confirmed` 訂單，與庫存數一致 |
 | Step 3（Redis 原子扣減） | Redis Lua Script 原子檢查＋扣減 | 秒殺活動（`SeckillOrderService`） | 50 | 10 | 10 | 40 | 0 | 否 | Redis 庫存剩 0，剛好 10 筆 `Confirmed` 訂單；平均延遲 275ms（比 Step 2 快 41%） |
 | Step 5（Redis Stream + Worker 非同步） | 扣庫存＋`XADD` 同一支 Lua Script 原子完成，Worker 非同步消費寫入 MSSQL | 秒殺活動（`SeckillOrderService`） | 50 | 10 | 10 | 40 | 0 | 否 | 訂單數精準等於 10；成功路徑平均延遲降到 87.7ms（不再等 MSSQL 寫入） |
+| Step 6a（API 限流／正常流量） | Token Bucket（`SeckillOrderPolicy`）+ 全站 Sliding Window | 秒殺活動，50 個不同帳號各發 1 次（`seckill-rush.js`） | 50 | 10 | 10 | 40 | 0（另有 429：0） | 否 | 限流沒有誤傷正常的搶購流量，結果與 Step 3/5 一致 |
+| Step 6b（API 限流／單一帳號連續搶購） | 同上 | 秒殺活動，同一帳號連續發 10 次（`rate-limit-test.js`） | 1（連發 10 次） | — | 5 | 0 | 0 | — | 前 5 次通過限流成功，第 6～10 次被限流擋下（429），精準對應 `TokenLimit: 5` |
 
 ## 結果解讀
 
@@ -41,6 +43,16 @@
 
 延遲方面，整體 `http_req_duration` 平均（278ms）跟 Step 3 相近，是因為 50 個請求裡有 40 個（80%）是被快速拒絕的 400/409，兩個版本這部分耗時相近，拉平了整體平均、掩蓋了真正的差異。真正該比較的是**成功路徑**的延遲：這次 10 個成功請求（200）的平均延遲只有 **87.7ms**，因為成功回應不再需要等待 MSSQL 寫入完成，只需要一次 Redis round trip 就能回應使用者。
 
+### Step 6：API 限流保護，驗證不誤傷正常流量、精準攔截異常流量
+
+套用 `Microsoft.AspNetCore.RateLimiting`，針對 `POST /api/orders` 加上以使用者身分（`ClaimTypes.NameIdentifier`）分區的 Token Bucket 限流（`SeckillOrderPolicy`：`TokenLimit: 5, TokensPerPeriod: 1, ReplenishmentPeriod: 2s`），另外在全站層級加上 Sliding Window 限流作為基礎防護。這一步需要兩種完全不同形狀的測試，分別驗證限流「沒有誤傷」和「確實有攔截」：
+
+**6a、正常搶購流量不被誤傷**：沿用跟 Step 3/5 相同的 `seckill-rush.js`，50 個不同帳號各發 1 次請求，模擬真實的秒殺尖峰流量。結果與 Step 3/5 完全一致（10 個 200、40 個 400/409、0 個 429），證明 Token Bucket 是「以使用者為單位」分桶，50 個不同使用者各自的桶子都還是滿的，不會互相影響，限流機制不會誤傷正常的多人搶購場景。
+
+**6b、單一帳號異常連續請求被精準攔截**：因為 6a 這種「50 個不同使用者各打 1 次」的形狀，結構上不可能讓任何一個使用者的桶子被打空，所以另外寫了 `rate-limit-test.js`，改用 k6 的 `shared-iterations` executor，讓同一個帳號在極短時間內連續發送 10 次請求。結果前 5 次全部成功通過限流（進入正常的訂單處理流程），第 6～10 次全部被擋下（429），且因為 10 次請求幾乎在同一瞬間完成，`ReplenishmentPeriod: 2s` 的補充機制沒有時間生效，精準對應 `TokenLimit: 5` 的設計值，驗證限流規則確實生效。
+
+兩組測試合起來完整驗證了限流層的兩個面向：不會誤傷（false positive）也不會漏放（false negative）。
+
 ---
 
-*原始 k6 JSON 匯出檔案存放於 `loadtests/k6/results/`（`baseline.json`、`step2-optimistic-lock.json`、`step3-redis-decrement.json`、`step5-async-worker.json`），供之後 Phase 9 撰寫作品集 README 時引用。*
+*原始 k6 JSON 匯出檔案存放於 `loadtests/k6/results/`（`baseline.json`、`step2-optimistic-lock.json`、`step3-redis-decrement.json`、`step5-async-worker.json`、`step6a-rate-limit-normal.json`、`step6b-rate-limit-burst.json`），供之後 Phase 9 撰寫作品集 README 時引用。*

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Seckill.Application.Interfaces;
 using Seckill.Domain.Entities;
 
@@ -31,6 +32,7 @@ public class OrdersController : ControllerBase
 
     [HttpPost]
     [Authorize]
+    [EnableRateLimiting("SeckillOrderPolicy")]
     public async Task<IActionResult> PlaceOrder([FromBody] PlaceOrderRequest request)
     {
         var userId = GetCurrentUserId();
